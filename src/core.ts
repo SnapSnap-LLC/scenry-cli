@@ -303,9 +303,14 @@ export class SkillHarborClient {
       },
     );
     if (!response.ok) return this.fail(response);
-    const length = Number(response.headers.get('content-length'));
-    if (!Number.isSafeInteger(length) || length <= 0 || length > MAX_ARCHIVE_BYTES)
-      throw new ClientError('包大小无效或超过 32 MiB。');
+    // Some proxies stream the response without a Content-Length.
+    const contentLength = response.headers.get('content-length');
+    const length = contentLength === null ? null : Number(contentLength);
+    if (length !== null && (!Number.isSafeInteger(length) || length <= 0))
+      throw new ClientError('服务返回的 ZIP 长度无效。请联系站点支持。', 'archive_length_invalid');
+    if (length !== null && length > MAX_ARCHIVE_BYTES)
+      throw new ClientError('ZIP 超过 32 MiB。请联系 Skill 发布者。', 'archive_too_large');
+    const limit = length ?? MAX_ARCHIVE_BYTES;
     if (response.headers.get('content-type')?.split(';')[0] !== 'application/zip')
       throw new ClientError('响应不是 ZIP。');
     const version = response.headers.get('x-skill-version');
@@ -325,13 +330,17 @@ export class SkillHarborClient {
       const part = await reader.read();
       if (part.done) break;
       total += part.value.byteLength;
-      if (total > length || total > MAX_ARCHIVE_BYTES) {
-        await reader.cancel();
-        throw new ClientError('下载内容超过声明大小。');
+      if (total > limit) {
+        await reader.cancel().catch(() => {});
+        if (total > MAX_ARCHIVE_BYTES)
+          throw new ClientError('ZIP 超过 32 MiB。请联系 Skill 发布者。', 'archive_too_large');
+        throw new ClientError('ZIP 与声明长度不符。请联系站点支持。', 'archive_length_mismatch');
       }
       chunks.push(part.value);
     }
-    if (total !== length) throw new ClientError('下载内容长度校验失败。');
+    if (total === 0) throw new ClientError('下载内容为空。');
+    if (length !== null && total !== length)
+      throw new ClientError('ZIP 与声明长度不符。请联系站点支持。', 'archive_length_mismatch');
     const bytes = Buffer.concat(chunks);
     return verifyArchive(bytes, expectedHash, slug, version);
   }

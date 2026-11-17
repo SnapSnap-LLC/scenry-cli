@@ -1,6 +1,6 @@
 {
   "name": "scenry-cli",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Scenry command line client",
   "license": "UNLICENSED",
   "type": "module",
@@ -17,7 +17,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20.19"
